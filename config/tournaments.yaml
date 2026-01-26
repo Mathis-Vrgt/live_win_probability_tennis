@@ -184,9 +184,9 @@ Shanghai:
   surface: Hard
   level: ATP250
 
-  Doha:
-    surface: Hard
-    level: ATP500
+Doha:
+  surface: Hard
+  level: ATP500
 
 Zhuhai:
   surface: Hard
