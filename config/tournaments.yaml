@@ -1,0 +1,273 @@
+# =========================
+# GRAND SLAMS
+# =========================
+Australian_Open:
+  surface: Hard
+  level: GS
+
+Roland_Garros:
+  surface: Clay
+  level: GS
+
+Wimbledon:
+  surface: Grass
+  level: GS
+
+US_Open:
+  surface: Hard
+  level: GS
+
+# =========================
+# ATP FINALS / TEAM EVENTS
+# =========================
+Tour_Finals:
+  surface: Hard
+  level: ATP_Finals
+
+NextGen_Finals:
+  surface: Hard
+  level: ATP_Finals
+
+Laver_Cup:
+  surface: Hard
+  level: Exhibition
+
+Davis_Cup_Finals:
+  surface: Hard
+  level: Team
+
+# =========================
+# ATP MASTERS 1000
+# =========================
+Indian_Wells_Masters:
+  surface: Hard
+  level: M1000
+
+Miami_Masters:
+  surface: Hard
+  level: M1000
+
+Monte_Carlo_Masters:
+  surface: Clay
+  level: M1000
+
+Madrid_Masters:
+  surface: Clay
+  level: M1000
+
+Rome_Masters:
+  surface: Clay
+  level: M1000
+
+Canada_Masters:
+  surface: Hard
+  level: M1000
+
+Cincinnati_Masters:
+  surface: Hard
+  level: M1000
+
+Shanghai_Masters:
+  surface: Hard
+  level: M1000
+
+Paris_Masters:
+  surface: Hard
+  level: M1000
+
+# =========================
+# ATP 500 / 250 – CLAY
+# =========================
+Barcelona:
+  surface: Clay
+  level: ATP500
+
+Hamburg:
+  surface: Clay
+  level: ATP500
+
+Bastad:
+  surface: Clay
+  level: ATP250
+
+Umag:
+  surface: Clay
+  level: ATP250
+
+Kitzbuhel:
+  surface: Clay
+  level: ATP250
+
+Gstaad:
+  surface: Clay
+  level: ATP250
+
+Buenos_Aires:
+  surface: Clay
+  level: ATP250
+
+Rio_de_Janeiro:
+  surface: Clay
+  level: ATP500
+
+Sao_Paulo:
+  surface: Clay
+  level: ATP250
+
+Cordoba:
+  surface: Clay
+  level: ATP250
+
+Santiago:
+  surface: Clay
+  level: ATP250
+
+Lyon:
+  surface: Clay
+  level: ATP250
+
+# =========================
+# ATP 500 / 250 – GRASS
+# =========================
+Queens_Club:
+  surface: Grass
+  level: ATP500
+
+Halle:
+  surface: Grass
+  level: ATP500
+
+Eastbourne:
+  surface: Grass
+  level: ATP250
+
+Stuttgart:
+  surface: Grass
+  level: ATP250
+
+s_Hertogenbosch:
+  surface: Grass
+  level: ATP250
+
+Newport:
+  surface: Grass
+  level: ATP250
+
+# =========================
+# ATP 500 / 250 – HARD
+# =========================
+Basel:
+  surface: Hard
+  level: ATP500
+
+Vienna:
+  surface: Hard
+  level: ATP500
+
+Stockholm:
+  surface: Hard
+  level: ATP250
+
+Antwerp:
+  surface: Hard
+  level: ATP250
+
+Beijing:
+  surface: Hard
+  level: ATP500
+
+Tokyo:
+  surface: Hard
+  level: ATP500
+
+Shanghai:
+  surface: Hard
+  level: ATP250
+
+  Doha:
+    surface: Hard
+    level: ATP500
+
+Zhuhai:
+  surface: Hard
+  level: ATP250
+
+Moscow:
+  surface: Hard
+  level: ATP250
+
+St_Petersburg:
+  surface: Hard
+  level: ATP250
+
+Marseille:
+  surface: Hard
+  level: ATP250
+
+Rotterdam:
+  surface: Hard
+  level: ATP500
+
+Dubai:
+  surface: Hard
+  level: ATP500
+
+Acapulco:
+  surface: Hard
+  level: ATP500
+
+Delray_Beach:
+  surface: Hard
+  level: ATP250
+
+Los_Cabos:
+  surface: Hard
+  level: ATP250
+
+# =========================
+# CHALLENGERS
+# =========================
+Hamburg_CH:
+  surface: Clay
+  level: CH
+
+Florence_CH:
+  surface: Hard
+  level: CH
+
+Eckental_CH:
+  surface: Hard
+  level: CH
+
+Ismaning_CH:
+  surface: Hard
+  level: CH
+
+Santo_Domingo_CH:
+  surface: Hard
+  level: CH
+
+Bergamo_CH:
+  surface: Hard
+  level: CH
+
+Biella_CH:
+  surface: Clay
+  level: CH
+
+Cherbourg_CH:
+  surface: Hard
+  level: CH
+Caltanissetta_CH:
+  surface: Clay
+  level: CH
+Tenerife_CH:
+  surface: Hard
+  level: CH
+
+Lima_CH:
+  surface: Clay
+  level: CH
+Sibiu_CH:
+  surface: Clay
+  level: CH
