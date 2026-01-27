@@ -128,6 +128,12 @@ def get_surface(tournament_code):
     return info.get('surface', 'Unknown')
 
 
+def column_year(df):
+    """Extrait l'année de l'ID du match et crée une colonne 'year'."""
+    df['year'] = df['match_id'].str[:4].astype(int)
+    return df
+
+
 def get_level(tournament_code):
     """Renvoie le niveau du tournoi (ATP, GS, etc.) à partir de son code."""
     info = TOURNAMENT_INFO.get(tournament_code, {})
@@ -188,40 +194,24 @@ def enrich_match_context(df):
     return df
 
 def calculate_elo(df, k_factor=32):
-    """
-    Calcule l'Elo en triant strictement par la date contenue dans le match_id.
-    """
-    # On trie par les 8 premiers caractères (YYYYMMDD) pour la chronologie
-    # On ajoute Pt pour garder l'ordre interne si besoin, mais match_id suffit ici
+    # On trie pour être sûr de l'ordre chronologique
     df_sorted = df.sort_values(by=['match_id'])
-
-    # On récupère les matchs uniques dans l'ordre chronologique
-    matches = df_sorted.drop_duplicates('match_id')
+    matches = df_sorted[['match_id', 'Player1_Name', 'Player2_Name', 'Winner']].drop_duplicates()
 
     elo_dict = {}
     elo_history = []
 
     for _, row in matches.iterrows():
-        p1 = row['Player1_Name']
-        p2 = row['Player2_Name']
-        winner = row['Winner']
+        p1, p2 = row['Player1_Name'], row['Player2_Name']
+        # On récupère l'Elo AVANT le match (Information disponible)
+        r1, r2 = elo_dict.get(p1, 1500), elo_dict.get(p2, 1500)
 
-        r1 = elo_dict.get(p1, 1500)
-        r2 = elo_dict.get(p2, 1500)
+        elo_history.append({'match_id': row['match_id'], 'Elo_P1': r1, 'Elo_P2': r2})
 
-        # On stocke l'Elo AVANT le match
-        elo_history.append({
-            'match_id': row['match_id'],
-            'Elo_P1': r1,
-            'Elo_P2': r2,
-            'Elo_Diff': r1 - r2
-        })
-
-        # Formule Elo
+        # MISE À JOUR : On utilise le résultat pour le PROCHAIN match
+        actual_p1 = 1 if row['Winner'] == p1 else 0
         expected_p1 = 1 / (1 + 10 ** ((r2 - r1) / 400))
-        actual_p1 = 1 if winner == p1 else 0
 
-        # Mise à jour pour les prochains matchs
         elo_dict[p1] = r1 + k_factor * (actual_p1 - expected_p1)
         elo_dict[p2] = r2 + k_factor * ((1 - actual_p1) - (1 - expected_p1))
 
@@ -272,52 +262,81 @@ def add_dominance_features(df):
     df['game_diff'] = df['Gm1'] - df['Gm2']
     return df
 
+def elo_difference(df):
+    """Calcule la différence d'Elo entre les deux joueurs."""
+    df['Elo_Diff'] = df['Elo_P1'] - df['Elo_P2']
+    return df
 
 
 
 def calculate_historical_momentum(df, window=5):
     """
-    Calcule la forme récente de manière sécurisée contre les valeurs manquantes.
+    Calcule la forme récente (streak) de manière causale.
+    Le match en cours n'est JAMAIS inclus dans le calcul de la forme.
     """
-    # 1. On nettoie : on ne garde que les lignes où on a un vainqueur identifié
-    # Si Winner est NaN, on ne peut pas calculer de streak fiable
+    # 1. On extrait les résultats uniques de chaque match de manière propre
+    # On utilise Winner_ID (que tu as dû créer au moment de l'Elo causal)
     match_results = df[['match_id', 'Player1_Name', 'Player2_Name', 'Winner']].drop_duplicates().copy()
     match_results = match_results.dropna(subset=['Winner'])
 
-    match_results['date'] = match_results['match_id'].str[:8]
-    match_results = match_results.sort_values('date')
+    # Extraction de la date pour le tri chronologique
+    match_results['date_int'] = match_results['match_id'].str[:8].astype(int)
+    match_results = match_results.sort_values(['date_int', 'match_id'])
 
-    def get_streak(player_name, current_date):
-        # Filtre les matchs passés
+    def get_safe_streak(player_name, current_match_id, current_date):
+        # On filtre : Matchs passés UNIQUEMENT (date antérieure)
+        # ET on exclut le match_id actuel par sécurité
         past_matches = match_results[
-            (match_results['date'] < current_date) &
+            (match_results['date_int'] <= current_date) &
+            (match_results['match_id'] < current_match_id) &
             ((match_results['Player1_Name'] == player_name) | (match_results['Player2_Name'] == player_name))
         ].tail(window)
 
         if len(past_matches) == 0:
-            return 0.5  # Valeur neutre (50/50) plutôt que 0 pour éviter les biais
+            return 0.5  # Neutre si premier match
 
-        # Somme des victoires (booléen vers float, pas de conversion int ici)
+        # On calcule le ratio de victoires sur les N derniers matchs passés
+        # (Le gagnant était-il le joueur en question ?)
         wins = (past_matches['Winner'] == player_name).sum()
         return float(wins) / len(past_matches)
 
-    # 2. Application
-    unique_matches = match_results[['match_id', 'Player1_Name', 'Player2_Name', 'date']].copy()
-
-    # On s'assure que les noms sont bien des strings pour éviter les erreurs de comparaison
-    unique_matches['Player1_Name'] = unique_matches['Player1_Name'].astype(str)
-    unique_matches['Player2_Name'] = unique_matches['Player2_Name'].astype(str)
+    # 2. Application du calcul sur chaque match unique
+    unique_matches = match_results[['match_id', 'Player1_Name', 'Player2_Name', 'date_int']].copy()
 
     unique_matches['p1_recent_form'] = unique_matches.apply(
-        lambda x: get_streak(x['Player1_Name'], x['date']), axis=1)
-    unique_matches['p2_recent_form'] = unique_matches.apply(
-        lambda x: get_streak(x['Player2_Name'], x['date']), axis=1)
+        lambda x: get_safe_streak(x['Player1_Name'], x['match_id'], x['date_int']), axis=1)
 
-    # On remplit les éventuels NaN restants par sécurité
-    unique_matches['p1_recent_form'] = unique_matches['p1_recent_form'].fillna(0.5)
-    unique_matches['p2_recent_form'] = unique_matches['p2_recent_form'].fillna(0.5)
+    unique_matches['p2_recent_form'] = unique_matches.apply(
+        lambda x: get_safe_streak(x['Player2_Name'], x['match_id'], x['date_int']), axis=1)
 
     return unique_matches[['match_id', 'p1_recent_form', 'p2_recent_form']]
+
+
+def nombre_dematchs_joueur(df):
+    """Compte le nombre de matchs joués au moment du match."""
+    match_results = df[['match_id', 'Player1_Name', 'Player2_Name']].drop_duplicates().copy()
+    match_results = match_results.sort_values('match_id')
+
+    def count_matches(player, current_match_id):
+        past_matches = match_results[
+            (match_results['match_id'] < current_match_id) &
+            ((match_results['Player1_Name'] == player) | (match_results['Player2_Name'] == player))
+        ]
+        return len(past_matches)
+
+    match_results['p1_total_matches'] = match_results.apply(
+        lambda x: count_matches(x['Player1_Name'], x['match_id']), axis=1)
+    match_results['p2_total_matches'] = match_results.apply(
+        lambda x: count_matches(x['Player2_Name'], x['match_id']), axis=1)
+
+    return match_results[['match_id', 'p1_total_matches', 'p2_total_matches']]
+
+
+def column_winner(df):
+    """transforme la colonne Winner en 1 si joueur 1 gagne et 0 sinon"""
+
+    df['Winner_Binary'] = np.where(df['Winner'] == df['Player1_ID'], 1, 0)
+    return df
 
 
 def df_complete_features(df):
@@ -355,9 +374,15 @@ def df_complete_features(df):
     df['p2_recent_form'] = df['p2_recent_form'].fillna(0.5)
     print(df['p1_recent_form'].quantile([0.25, 0.5, 0.75, 0.99]))
 
+    # Nombre de matchs joués
+    df = df.merge(nombre_dematchs_joueur(df), on='match_id', how='left')
+    df = column_year(df)
+
+    df = column_winner(df)
+    df = elo_difference(df)
+
     # Finalisation
     return df.reset_index(drop=True)
-
 
 
 
@@ -368,9 +393,15 @@ if __name__ == "__main__":
         print("Data loaded successfully:")
         df = df_complete_features(df)
 
-        print(df.tail(10))
+        print(df.tail(200))
         # nombre de lignes
         print(f"Nombre de lignes : {len(df)}")
+        print(f"Colonnes disponibles : {df.columns.tolist()}")
+        #quantiles de elo
+        print("Quantiles Elo_P1 :")
+        print(df['Elo_P1'].quantile([0.25, 0.5, 0.75, 0.99]))
+        print("Quantiles Elo_P2 :")
+        print(df['Elo_P2'].quantile([0.25, 0.5, 0.75, 0.99]))
 
     except Exception as e:
         print(f"Erreur : {e}")
