@@ -187,6 +187,139 @@ def enrich_match_context(df):
 
     return df
 
+def calculate_elo(df, k_factor=32):
+    """
+    Calcule l'Elo en triant strictement par la date contenue dans le match_id.
+    """
+    # On trie par les 8 premiers caractères (YYYYMMDD) pour la chronologie
+    # On ajoute Pt pour garder l'ordre interne si besoin, mais match_id suffit ici
+    df_sorted = df.sort_values(by=['match_id'])
+
+    # On récupère les matchs uniques dans l'ordre chronologique
+    matches = df_sorted.drop_duplicates('match_id')
+
+    elo_dict = {}
+    elo_history = []
+
+    for _, row in matches.iterrows():
+        p1 = row['Player1_Name']
+        p2 = row['Player2_Name']
+        winner = row['Winner']
+
+        r1 = elo_dict.get(p1, 1500)
+        r2 = elo_dict.get(p2, 1500)
+
+        # On stocke l'Elo AVANT le match
+        elo_history.append({
+            'match_id': row['match_id'],
+            'Elo_P1': r1,
+            'Elo_P2': r2,
+            'Elo_Diff': r1 - r2
+        })
+
+        # Formule Elo
+        expected_p1 = 1 / (1 + 10 ** ((r2 - r1) / 400))
+        actual_p1 = 1 if winner == p1 else 0
+
+        # Mise à jour pour les prochains matchs
+        elo_dict[p1] = r1 + k_factor * (actual_p1 - expected_p1)
+        elo_dict[p2] = r2 + k_factor * ((1 - actual_p1) - (1 - expected_p1))
+
+    return pd.DataFrame(elo_history)
+
+
+def calculate_live_momentum(df):
+    """
+    Calcule les statistiques de performance en direct durant le match de manière optimisée.
+    """
+
+    df['p1_served_and_won'] = ((df['Svr'] == 1) & (df['PtWinner'] == 1)).astype(int)
+    df['p1_is_serving'] = (df['Svr'] == 1).astype(int)
+
+    df['p2_served_and_won'] = ((df['Svr'] == 2) & (df['PtWinner'] == 2)).astype(int)
+    df['p2_is_serving'] = (df['Svr'] == 2).astype(int)
+
+    # 2. Somme cumulée par match (vectorisé)
+    # On groupe par match_id pour ne pas mélanger les stats d'un match à l'autre
+    group = df.groupby('match_id')
+
+    df['p1_pts_won_on_serve'] = group['p1_served_and_won'].cumsum()
+    df['p1_total_serve_pts'] = group['p1_is_serving'].cumsum()
+
+    df['p2_pts_won_on_serve'] = group['p2_served_and_won'].cumsum()
+    df['p2_total_serve_pts'] = group['p2_is_serving'].cumsum()
+
+    # 3. Calcul des ratios (Momentum de service)
+    # On utilise .replace(0, 1) pour éviter la division par zéro au premier point
+    df['p1_serve_win_rate'] = df['p1_pts_won_on_serve'] / df['p1_total_serve_pts'].replace(0, 1)
+    df['p2_serve_win_rate'] = df['p2_pts_won_on_serve'] / df['p2_total_serve_pts'].replace(0, 1)
+
+    # Nettoyage des colonnes temporaires
+    df = df.drop(columns=['p1_served_and_won', 'p1_is_serving', 'p2_served_and_won', 'p2_is_serving', 'p1_pts_won_on_serve', 'p1_total_serve_pts', 'p2_pts_won_on_serve', 'p2_total_serve_pts'])
+
+    return df
+
+
+def add_dominance_features(df):
+    # Appliquer to_numeric avec errors='coerce' transforme les erreurs en NaN
+    # Ensuite on remplit les NaN par 0
+    df['Set1'] = pd.to_numeric(df['Set1'], errors='coerce').fillna(0).astype(int)
+    df['Set2'] = pd.to_numeric(df['Set2'], errors='coerce').fillna(0).astype(int)
+    df['Gm1'] = pd.to_numeric(df['Gm1'], errors='coerce').fillna(0).astype(int)
+    df['Gm2'] = pd.to_numeric(df['Gm2'], errors='coerce').fillna(0).astype(int)
+
+    df['set_diff'] = df['Set1'] - df['Set2']
+    df['game_diff'] = df['Gm1'] - df['Gm2']
+    return df
+
+
+
+
+def calculate_historical_momentum(df, window=5):
+    """
+    Calcule la forme récente de manière sécurisée contre les valeurs manquantes.
+    """
+    # 1. On nettoie : on ne garde que les lignes où on a un vainqueur identifié
+    # Si Winner est NaN, on ne peut pas calculer de streak fiable
+    match_results = df[['match_id', 'Player1_Name', 'Player2_Name', 'Winner']].drop_duplicates().copy()
+    match_results = match_results.dropna(subset=['Winner'])
+
+    match_results['date'] = match_results['match_id'].str[:8]
+    match_results = match_results.sort_values('date')
+
+    def get_streak(player_name, current_date):
+        # Filtre les matchs passés
+        past_matches = match_results[
+            (match_results['date'] < current_date) &
+            ((match_results['Player1_Name'] == player_name) | (match_results['Player2_Name'] == player_name))
+        ].tail(window)
+
+        if len(past_matches) == 0:
+            return 0.5  # Valeur neutre (50/50) plutôt que 0 pour éviter les biais
+
+        # Somme des victoires (booléen vers float, pas de conversion int ici)
+        wins = (past_matches['Winner'] == player_name).sum()
+        return float(wins) / len(past_matches)
+
+    # 2. Application
+    unique_matches = match_results[['match_id', 'Player1_Name', 'Player2_Name', 'date']].copy()
+
+    # On s'assure que les noms sont bien des strings pour éviter les erreurs de comparaison
+    unique_matches['Player1_Name'] = unique_matches['Player1_Name'].astype(str)
+    unique_matches['Player2_Name'] = unique_matches['Player2_Name'].astype(str)
+
+    unique_matches['p1_recent_form'] = unique_matches.apply(
+        lambda x: get_streak(x['Player1_Name'], x['date']), axis=1)
+    unique_matches['p2_recent_form'] = unique_matches.apply(
+        lambda x: get_streak(x['Player2_Name'], x['date']), axis=1)
+
+    # On remplit les éventuels NaN restants par sécurité
+    unique_matches['p1_recent_form'] = unique_matches['p1_recent_form'].fillna(0.5)
+    unique_matches['p2_recent_form'] = unique_matches['p2_recent_form'].fillna(0.5)
+
+    return unique_matches[['match_id', 'p1_recent_form', 'p2_recent_form']]
+
+
 def df_complete_features(df):
     # Nettoyage : On ne garde que les vrais points
     df = df[df['Pts'].str.contains('-', na=False)].copy()
@@ -204,8 +337,28 @@ def df_complete_features(df):
     df = enrich_match_context(df)
     df['Is_Set_Point'] = df.apply(is_set_point, axis=1)
 
+    # elo
+    print("Calcul de l'Elo en cours...")
+    elo_map = calculate_elo(df)
+    df = df.merge(elo_map, on='match_id', how='left')
+
+    # momentum live
+    print("Calcul du momentum en cours...")
+    df = calculate_live_momentum(df)
+    df = add_dominance_features(df)
+    historical_momentum_df = calculate_historical_momentum(df)
+    # On fusionne ce résultat avec le df principal
+    df = df.merge(historical_momentum_df, on='match_id', how='left')
+
+    # 3.On remplit les cases vides par 0.5 (neutre) pour les nouveaux joueurs
+    df['p1_recent_form'] = df['p1_recent_form'].fillna(0.5)
+    df['p2_recent_form'] = df['p2_recent_form'].fillna(0.5)
+    print(df['p1_recent_form'].quantile([0.25, 0.5, 0.75, 0.99]))
+
     # Finalisation
     return df.reset_index(drop=True)
+
+
 
 
 if __name__ == "__main__":
@@ -215,11 +368,9 @@ if __name__ == "__main__":
         print("Data loaded successfully:")
         df = df_complete_features(df)
 
-        print(df.head(10))
+        print(df.tail(10))
         # nombre de lignes
         print(f"Nombre de lignes : {len(df)}")
-        print(get_surface("Doha"))
-        #afficher les colonnes
-        print(df.columns)
+
     except Exception as e:
         print(f"Erreur : {e}")
