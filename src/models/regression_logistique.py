@@ -56,3 +56,42 @@ model.fit(X_train, y_train)
 
 print(f"Score Train: {model.score(X_train, y_train):.3f}")
 print(f"Score Test: {model.score(X_test, y_test):.3f}")
+
+
+
+import matplotlib.pyplot as plt
+
+# 1. Choisir un match spécifique dans le jeu de test
+match_ids_test = df_test['match_id'].unique()
+target_match = "20250608-M-Roland_Garros-F-Jannik_Sinner-Carlos_Alcaraz"
+
+# 2. Extraire les points de ce match et leurs caractéristiques
+match_indices = df_test[df_test['match_id'] == target_match].index
+X_match = X_test.loc[match_indices]
+
+# 3. Prédire les probabilités (colonne 1 = Probabilité que Player 1 gagne)
+probabilities = model.predict_proba(X_match)[:, 1]
+
+# 4. Récupérer les infos pour l'affichage (Score, Joueurs)
+match_info = df_test[df_test['match_id'] == target_match].iloc[0]
+p1_name = match_info['Player1_Name']
+p2_name = match_info['Player2_Name']
+
+# 5. Tracer la courbe
+plt.figure(figsize=(12, 6))
+plt.plot(range(len(probabilities)), probabilities, label='Win Probability P1', color='blue', linewidth=2)
+
+# Ligne d'équilibre (50%)
+plt.axhline(y=0.5, color='red', linestyle='--', alpha=0.5)
+
+# Cosmétique du graphique
+plt.ylim(0, 1)
+plt.title(f"Live Win Probability: {p1_name} vs {p2_name}")
+plt.xlabel("Points joués")
+plt.ylabel(f"Probabilité de victoire ({p1_name})")
+plt.grid(True, alpha=0.3)
+plt.legend()
+
+# Sauvegarde de l'image
+plt.savefig('win_probability_curve.png')
+print(f"Courbe de probabilité générée pour le match : {target_match}")
