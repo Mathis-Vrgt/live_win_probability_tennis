@@ -1,9 +1,7 @@
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
-from sklearn.linear_model import LogisticRegression
 from utils.features import load_data, df_complete_features
 import statsmodels.api as sm
-import matplotlib.pyplot as plt
 
 
 df = load_data("/Users/mathisverguet/live_win_probability_tennis/data/raw/processed/charting-m-points-2020s.csv")

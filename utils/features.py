@@ -392,6 +392,10 @@ if __name__ == "__main__":
         df = load_data(test_file_path)
         print("Data loaded successfully:")
         df = df_complete_features(df)
+        df_2 = load_data("/Users/mathisverguet/live_win_probability_tennis/data/raw/processed/charting-m-points-2020s.csv")
+        df_2 = df_complete_features(df_2)
+        # ajout du df1 et df2
+        df = pd.concat([df, df_2], ignore_index=True)
 
         print(df.tail(200))
         # nombre de lignes

@@ -4,18 +4,26 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LogisticRegression
 from utils.features import load_data, df_complete_features
 import matplotlib.pyplot as plt
+from sklearn.metrics import brier_score_loss, log_loss
+from sklearn.calibration import calibration_curve
 
 
 df = load_data("/Users/mathisverguet/live_win_probability_tennis/data/raw/processed/charting-m-points-2020s.csv")
 df = df_complete_features(df)
+df_2 = load_data("/Users/mathisverguet/live_win_probability_tennis/data/raw/processed/charting-m-points-2020s.csv")
+df_2 = df_complete_features(df_2)
+df_3 = load_data("/Users/mathisverguet/live_win_probability_tennis/data/raw/processed/charting-m-points-to-2009.csv")
+df_3 = df_complete_features(df_3)
+# ajout du df1, df2 et df3
+df = pd.concat([df, df_2, df_3], ignore_index=True)
 
 # enlever les colonnes 2nd, 1st et Notes
 df = df.drop(columns=['2nd', '1st', 'Notes'])
 df = df.dropna().reset_index(drop=True)
 
 # Split temporel propre
-df_train = df[df['year'] <= 2023].copy()
-df_test = df[df['year'] > 2024].copy()
+df_train = df[df['year'] <= 2015].copy()
+df_test = df[df['year'] > 2015].copy()
 
 # Liste des colonnes à supprimer
 cols_to_drop = [
@@ -70,8 +78,14 @@ model = LogisticRegression(max_iter=1000)
 model.fit(X_train, y_train)
 model.score(X_train, y_train)
 
+probas = model.predict_proba(X_test)
+y_pred_proba = probas[:, 1]
+bs = brier_score_loss(y_test, y_pred_proba)
+ll = log_loss(y_test, y_pred_proba)
 print(f"Score Train: {model.score(X_train, y_train):.3f}")
 print(f"Score Test: {model.score(X_test, y_test):.3f}")
+print(f"Brier Score Test: {bs:.3f}")
+print(f"Log Loss Test: {ll:.3f}")
 
 ############################### Affichage de la live win probability ####################################
 
@@ -108,3 +122,30 @@ plt.legend()
 
 plt.savefig('win_probability_curve.png')
 print(f"Courbe de probabilité générée pour le match : {target_match}")
+
+
+def plot_calibration(y_true, y_probs, model_name):
+    # prob_true : la fréquence réelle observée
+    # prob_pred : la probabilité moyenne prédite par le modèle
+    prob_true, prob_pred = calibration_curve(y_true, y_probs, n_bins=10)
+
+    plt.plot(prob_pred, prob_true, marker='o', linewidth=1, label=model_name)
+
+# --- Dans ton script principal ---
+plt.figure(figsize=(8, 8))
+
+# On trace la diagonale de référence
+plt.plot([0, 1], [0, 1], linestyle='--', color='gray', label='Parfaite Calibration')
+
+# On ajoute tes modèles (exemple avec tes résultats XGBoost)
+plot_calibration(y_test, y_pred_proba, "Régression logiqtique baseline (Baseline)")
+
+# Quand tu auras ton RNN, tu n'auras qu'à ajouter cette ligne :
+# plot_calibration(y_test, y_rnn_proba, "Modèle Hybride RNN")
+
+plt.xlabel('Probabilité Prédite')
+plt.ylabel('Fréquence Réelle de Victoire')
+plt.title('Courbe de Calibration : Régression logistique vs Réalité')
+plt.legend()
+plt.grid(True, alpha=0.3)
+plt.show()
