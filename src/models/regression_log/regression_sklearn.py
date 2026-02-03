@@ -6,6 +6,7 @@ from utils.features import load_data, df_complete_features
 import matplotlib.pyplot as plt
 from sklearn.metrics import brier_score_loss, log_loss
 from sklearn.calibration import calibration_curve
+import seaborn as sns
 
 
 df = load_data("/Users/mathisverguet/live_win_probability_tennis/data/raw/processed/charting-m-points-2020s.csv")
@@ -23,7 +24,7 @@ df = df.dropna().reset_index(drop=True)
 
 # Split temporel propre
 df_train = df[df['year'] <= 2015].copy()
-df_test = df[df['year'] > 2015].copy()
+df_test = df[df['year'] >= 2020].copy()
 
 # Liste des colonnes à supprimer
 cols_to_drop = [
@@ -43,7 +44,7 @@ significant_features = ['Elo_Diff', 'Pt', 'set_diff', 'game_diff', 'p1_serve_win
                         'Simple_Score_Player2', 'p1_total_matches', 'p2_total_matches',
                         'Surface_Clay', 'Surface_Grass',
                         'Tournament_Level_M1000', 'Tournament_Level_ATP500', 'Tournament_Level_ATP250',
-                        'Tournament_Level_GS']
+                        'Tournament_Level_GS', "Elo_Surface_Diff"]
 
 
 X_train = X_train[significant_features]
@@ -149,3 +150,21 @@ plt.title('Courbe de Calibration : Régression logistique vs Réalité')
 plt.legend()
 plt.grid(True, alpha=0.3)
 plt.show()
+
+
+def plot_discrimination(y_true, y_probs, model_name):
+    plt.plot([0, 1], [0, 1], "k--", label="Parfaite Calibration", alpha=0.6)
+    plt.figure(figsize=(10, 6))
+    # Distribution pour les perdants (0)
+    sns.kdeplot(y_probs[y_true == 0], label='Réalité : Défaite', shade=True, color='red')
+    # Distribution pour les gagnants (1)
+    sns.kdeplot(y_probs[y_true == 1], label='Réalité : Victoire', shade=True, color='blue')
+
+    plt.title(f'Capacité de Discrimination - {model_name}')
+    plt.xlabel('Probabilité de victoire prédite')
+    plt.ylabel('Densité de matchs')
+    plt.legend()
+    plt.show()
+
+
+plot_discrimination(y_test, y_pred_proba, "Régression Logistique")

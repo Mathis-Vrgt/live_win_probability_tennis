@@ -218,6 +218,46 @@ def calculate_elo(df, k_factor=32):
     return pd.DataFrame(elo_history)
 
 
+
+def calculate_elo_surface(df, k_factor=32):
+    # On trie pour être sûr de l'ordre chronologique
+    df_sorted = df.sort_values(by=['match_id'])
+    matches = df_sorted[['match_id', 'Player1_Name', 'Player2_Name', 'Winner', 'Surface']].drop_duplicates()
+
+    elo_dict = {}
+    elo_history = []
+
+    for _, row in matches.iterrows():
+        p1, p2 = row['Player1_Name'], row['Player2_Name']
+        surface = row['Surface']
+        # Clé unique par joueur et surface
+        key1, key2 = (p1, surface), (p2, surface)
+
+        r1, r2 = elo_dict.get(key1, 1500), elo_dict.get(key2, 1500)
+
+        elo_history.append({'match_id': row['match_id'], 'Elo_P1_Surface': r1, 'Elo_P2_Surface': r2})
+
+        # MISE À JOUR : On utilise le résultat pour le PROCHAIN match
+        actual_p1 = 1 if row['Winner'] == p1 else 0
+        expected_p1 = 1 / (1 + 10 ** ((r2 - r1) / 400))
+
+        elo_dict[key1] = r1 + k_factor * (actual_p1 - expected_p1)
+        elo_dict[key2] = r2 + k_factor * ((1 - actual_p1) - (1 - expected_p1))
+
+    return pd.DataFrame(elo_history)
+
+
+
+def difference_in_elo_surface(df):
+    df['Elo_Surface_Diff'] = df['Elo_P1_Surface'] - df['Elo_P2_Surface']
+    return df
+
+
+
+
+
+
+
 def calculate_live_momentum(df):
     """
     Calcule les statistiques de performance en direct durant le match de manière optimisée.
@@ -360,6 +400,8 @@ def df_complete_features(df):
     print("Calcul de l'Elo en cours...")
     elo_map = calculate_elo(df)
     df = df.merge(elo_map, on='match_id', how='left')
+    elo_surface_map = calculate_elo_surface(df)
+    df = df.merge(elo_surface_map, on='match_id', how='left')
 
     # momentum live
     print("Calcul du momentum en cours...")
@@ -380,6 +422,7 @@ def df_complete_features(df):
 
     df = column_winner(df)
     df = elo_difference(df)
+    df = difference_in_elo_surface(df)
 
     # Finalisation
     return df.reset_index(drop=True)
@@ -406,6 +449,9 @@ if __name__ == "__main__":
         print(df['Elo_P1'].quantile([0.25, 0.5, 0.75, 0.99]))
         print("Quantiles Elo_P2 :")
         print(df['Elo_P2'].quantile([0.25, 0.5, 0.75, 0.99]))
+        # quantiles elo surfac Hard
+        print("Quantiles Elo_P1_Surface :")
+        print(df[df['Surface'] == 'Hard']['Elo_P1_Surface'].quantile([0.25, 0.5, 0.75, 0.99]))
 
     except Exception as e:
         print(f"Erreur : {e}")

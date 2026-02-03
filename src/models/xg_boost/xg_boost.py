@@ -6,6 +6,7 @@ from sklearn.metrics import log_loss, brier_score_loss, accuracy_score
 from utils.features import load_data, df_complete_features
 import matplotlib.pyplot as plt
 from sklearn.calibration import calibration_curve
+import seaborn as sns
 
 # 1. Chargement et Nettoyage
 print("Chargement des données...")
@@ -35,7 +36,8 @@ significant_features = [
     'Gm#', 'p1_recent_form', 'p2_recent_form', 'Svr_1', 'Simple_Score_Player1',
     'Simple_Score_Player2', 'p1_total_matches', 'p2_total_matches',
     'Surface_Clay', 'Surface_Grass', 'Surface_Hard',
-    'Tournament_Level_GS', 'Tournament_Level_M1000', 'Tournament_Level_ATP500', 'Tournament_Level_ATP250'
+    'Tournament_Level_GS', 'Tournament_Level_M1000', 'Tournament_Level_ATP500', 'Tournament_Level_ATP250',
+    "Elo_Surface_Diff", "Svr_2"
 ]
 
 # Colonnes de base pour le get_dummies
@@ -47,7 +49,6 @@ def prepare_matrices(data, features_list):
     X = pd.get_dummies(data.drop(columns=[c for c in cols_to_drop if c in data.columns]),
                        columns=['Surface', 'Tournament_Level', 'Svr'])
 
-    # Réalignement critique : on s'assure que X a exactement les colonnes de features_list
     X = X.reindex(columns=features_list, fill_value=0)
     y = data['Winner_Binary']
     return X, y
@@ -107,8 +108,6 @@ plt.plot([0, 1], [0, 1], linestyle='--', color='gray', label='Parfaite Calibrati
 # On ajoute tes modèles (exemple avec tes résultats XGBoost)
 plot_calibration(y_test, y_pred_proba, "Xgboost")
 
-# Quand tu auras ton RNN, tu n'auras qu'à ajouter cette ligne :
-# plot_calibration(y_test, y_rnn_proba, "Modèle Hybride RNN")
 
 plt.xlabel('Probabilité Prédite')
 plt.ylabel('Fréquence Réelle de Victoire')
@@ -116,3 +115,22 @@ plt.title('Courbe de Calibration : Xgboost vs Réalité')
 plt.legend()
 plt.grid(True, alpha=0.3)
 plt.show()
+
+
+def plot_discrimination(y_true, y_probs, model_name):
+    plt.figure(figsize=(10, 6))
+    # Distribution pour les perdants (0)
+    plt.plot([0, 1], [0, 1], "k--", label="Parfaite Calibration", alpha=0.6)
+    sns.kdeplot(y_probs[y_true == 0], label='Réalité : Défaite', shade=True, color='red')
+    # Distribution pour les gagnants (1)
+    sns.kdeplot(y_probs[y_true == 1], label='Réalité : Victoire', shade=True, color='blue')
+
+    plt.title(f'Capacité de Discrimination - {model_name}')
+    plt.xlabel('Probabilité de victoire prédite')
+    plt.ylabel('Densité de matchs')
+    plt.legend()
+    plt.show()
+
+# À tester avec :
+#plot_discrimination(y_test, y_pred_proba, "Régression Logistique")
+plot_discrimination(y_test, y_pred_proba, "XGBoost")
