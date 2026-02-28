@@ -4,7 +4,6 @@ from config.config_load import TOURNAMENT_INFO, POINTS_BY_ROUND
 from src.data_process.load_data import load_data
 import numpy as np
 
-
 def ajouter_noms_joueurs(df):
     """
     Extrait les noms des joueurs (avec les underscores) depuis le match_id.
@@ -269,10 +268,7 @@ def calculate_live_momentum(df):
     df['p2_served_and_won'] = ((df['Svr'] == 2) & (df['PtWinner'] == 2)).astype(int)
     df['p2_is_serving'] = (df['Svr'] == 2).astype(int)
 
-    # 2. Somme cumulée par match (vectorisé)
-    # On groupe par match_id pour ne pas mélanger les stats d'un match à l'autre
     group = df.groupby('match_id')
-
     df['p1_pts_won_on_serve'] = group['p1_served_and_won'].cumsum()
     df['p1_total_serve_pts'] = group['p1_is_serving'].cumsum()
 
@@ -302,11 +298,11 @@ def add_dominance_features(df):
     df['game_diff'] = df['Gm1'] - df['Gm2']
     return df
 
+
 def elo_difference(df):
     """Calcule la différence d'Elo entre les deux joueurs."""
     df['Elo_Diff'] = df['Elo_P1'] - df['Elo_P2']
     return df
-
 
 
 def calculate_historical_momentum(df, window=5):
@@ -379,13 +375,80 @@ def column_winner(df):
     return df
 
 
+# ################# Partie RNN : création des séquences de points
+
+
+def get_player_mappings(data):
+    """
+    Crée les dictionnaires de correspondance entre noms de joueurs et index.
+
+    Args:
+        data (pd.DataFrame): Le DataFrame contenant les colonnes Player1_Name et Player2_Name.
+
+    Returns:
+        dict, dict: player_to_idx (nom -> id) et idx_to_player (id -> nom)
+    """
+    players = pd.concat([data['Player1_Name'], data['Player2_Name']])
+    # si le joueur apparait moins de 10 fois, on le considère comme "inconnu"
+    player_counts = players.value_counts()
+    players = player_counts[player_counts >= 10].index.tolist()
+
+
+    # Création du dictionnaire nom -> index
+    # le 0 est réservé pour les joueurs inconnus (moins de 10 matchs)
+    player_to_idx = {player: idx + 1 for idx, player in enumerate(players)}
+    player_to_idx['<UNKNOWN>'] = 0
+
+    # Création du dictionnaire inverse
+    idx_to_player = {idx: player for player, idx in player_to_idx.items()}
+
+    return player_to_idx, idx_to_player
+
+
+def surfaces_to_index(data):
+    surfaces = data['Surface'].unique()
+    surface_to_idx = {surface: idx for idx, surface in enumerate(surfaces)}
+    idx_to_surface = {idx: surface for surface, idx in surface_to_idx.items()}
+    return surface_to_idx, idx_to_surface
+
+
+def tournaments_to_index(data):
+    tournaments = data['tournament_name'].unique()
+    tournament_to_idx = {tournament: idx for idx, tournament in enumerate(tournaments)}
+    idx_to_tournament = {idx: tournament for tournament, idx in tournament_to_idx.items()}
+    return tournament_to_idx, idx_to_tournament
+
+
+def sequence_rnn(data, sequence_length=10):
+    data = data.sort_values(['match_id', 'Pt']).reset_index(drop=True)
+    all_sequences = []
+
+        # Grouper par match pour éviter de recalculer data['match_id'] == matchs à chaque fois (plus rapide)
+    for _, match_data in data.groupby('match_id'):
+        winners = match_data['PtWinner'].values  # On suppose 1 ou 2 ici
+
+        for i in range(len(winners)):
+            # On prend les points avant l'index i
+                # Si i=0, la liste est vide. Si i=5, on prend de 0 à 4.
+            current_seq = winners[max(0, i - sequence_length) : i].tolist()
+
+                # Padding : on ajoute des 0 à gauche pour atteindre sequence_length
+            padded_seq = [0] * (sequence_length - len(current_seq)) + current_seq
+            all_sequences.append(padded_seq)
+    return np.array(all_sequences, dtype=np.int32)
+
+
+
+
+
+
+
 def df_complete_features(df):
     # Nettoyage : On ne garde que les vrais points
     df = df[df['Pts'].str.contains('-', na=False)].copy()
 
     # Extraction unique (On le fait ici, donc plus besoin dans enrich_match_context)
     match_parts = df['match_id'].str.split('-', expand=True)
-    df['Round_Code'] = match_parts[3]
     df['Player1_ID'] = match_parts[4]
     df['Player2_ID'] = match_parts[5]
     df['tournament_name'] = match_parts[2]

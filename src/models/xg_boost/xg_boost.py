@@ -7,6 +7,7 @@ from utils.features import load_data, df_complete_features
 import matplotlib.pyplot as plt
 from sklearn.calibration import calibration_curve
 import seaborn as sns
+from utils.utils_df import selectionner_match_fort_leverage
 
 # 1. Chargement et Nettoyage
 print("Chargement des données...")
@@ -32,7 +33,7 @@ df_test = df[df['year'] >= 2020].copy()
 print(f"Train: {len(df_train)} points | Val: {len(df_val)} points | Test: {len(df_test)} points")
 
 significant_features = [
-    'Elo_Diff', 'Pt', 'set_diff', 'game_diff', 'p1_serve_win_rate', 'p2_serve_win_rate',
+    'Elo_Diff', 'Pt', 'set_diff', 'game_diff',
     'Gm#', 'p1_recent_form', 'p2_recent_form', 'Svr_1', 'Simple_Score_Player1',
     'Simple_Score_Player2', 'p1_total_matches', 'p2_total_matches',
     'Surface_Clay', 'Surface_Grass', 'Surface_Hard',
@@ -79,8 +80,43 @@ model.fit(
 
 y_pred_proba = model.predict_proba(X_test)[:, 1]
 y_pred_bin = model.predict(X_test)
+probas = model.predict_proba(X_test)
 
-print("\n--- ÉVALUATION FINALE ---")
+L = []
+
+for match_id, match_df in df_test.groupby('match_id'):
+    X_match = X_test.loc[match_df.index]
+
+    probas = model.predict_proba(X_match)
+
+    # 2. Identifier les indices de "leverage" (indices locaux : 0, 1, 2...)
+    indices_relatifs = selectionner_match_fort_leverage(probas)
+
+    # 3. Conversion en indices GLOBAUX de df_test
+    # On utilise .index du groupe pour mapper l'index relatif à l'index réel
+    indices_globaux = match_df.index[indices_relatifs].tolist()
+
+    # 4. Ajouter à la liste globale (extend pour une liste plate)
+    L.extend(indices_globaux)
+
+# leverage
+X_test_leverage = X_test.loc[L]
+y_test_leverage = y_test.loc[L]
+
+# Prédiction des probabilités pour ce sous-ensemble
+probas_leverage = model.predict_proba(X_test_leverage)[:, 1]
+
+# Calcul des scores
+bs_leverage = brier_score_loss(y_test_leverage, probas_leverage)
+ll_leverage = log_loss(y_test_leverage, probas_leverage)
+
+# ---  Affichage des résultats ---
+print(f"Résultats High Leverage (n={len(L)})")
+print(f"Brier Score (Leverage): {bs_leverage:.3f}")
+print(f"Log Loss (Leverage): {ll_leverage:.3f}")
+
+
+print("\nRésultats sur l'ensemble de test")
 print(f"Accuracy:    {accuracy_score(y_test, y_pred_bin):.4f}")
 print(f"Log Loss:    {log_loss(y_test, y_pred_proba):.4f}")
 print(f"Brier Score: {brier_score_loss(y_test, y_pred_proba):.4f}")
@@ -130,7 +166,3 @@ def plot_discrimination(y_true, y_probs, model_name):
     plt.ylabel('Densité de matchs')
     plt.legend()
     plt.show()
-
-# À tester avec :
-#plot_discrimination(y_test, y_pred_proba, "Régression Logistique")
-plot_discrimination(y_test, y_pred_proba, "XGBoost")

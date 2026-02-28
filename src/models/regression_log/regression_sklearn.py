@@ -7,7 +7,9 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import brier_score_loss, log_loss
 from sklearn.calibration import calibration_curve
 import seaborn as sns
+from utils.utils_df import selectionner_match_fort_leverage
 
+####################################### Préparation des données ####################################
 
 df = load_data("/Users/mathisverguet/live_win_probability_tennis/data/raw/processed/charting-m-points-2020s.csv")
 df = df_complete_features(df)
@@ -29,7 +31,7 @@ df_test = df[df['year'] >= 2020].copy()
 # Liste des colonnes à supprimer
 cols_to_drop = [
     'match_id', 'Player1_ID', 'Player2_ID', 'Player1_Name', 'Player2_Name',
-    'tournament_name', 'Winner', 'PtWinner', 'year', 'Round_Code',
+    'tournament_name', 'Winner', 'PtWinner', 'year',
     'Pts'
 ]
 
@@ -39,7 +41,7 @@ X_test = pd.get_dummies(df_test.drop(columns=cols_to_drop + ['Winner_Binary']), 
 
 
 # Après analyse statistique, on ne garde que les features significatives (cf regression_logistique_stat.py)
-significant_features = ['Elo_Diff', 'Pt', 'set_diff', 'game_diff', 'p1_serve_win_rate', 'p2_serve_win_rate',
+significant_features = ['Elo_Diff', 'Pt', 'set_diff', 'game_diff',
                         'TbSet', 'Gm#', 'p1_recent_form', 'p2_recent_form', 'Svr_1', 'Simple_Score_Player1',
                         'Simple_Score_Player2', 'p1_total_matches', 'p2_total_matches',
                         'Surface_Clay', 'Surface_Grass',
@@ -60,7 +62,6 @@ y_test = df_test['Winner_Binary']
 # Normalisation
 features_a_normaliser = [
     'Elo_Diff',
-    'p1_serve_win_rate', 'p2_serve_win_rate',
     'p1_recent_form', 'p2_recent_form',
     'p1_total_matches', 'p2_total_matches',
     'game_diff', 'set_diff', 'Pt', 'Gm#'
@@ -74,10 +75,28 @@ X_test.loc[:, features_a_normaliser] = scaler.transform(X_test[features_a_normal
 
 print(X_train.shape, y_train.shape)
 
-# 4. On relance le modèle de sklearn qui est plus performant
+######################################### Entraînement du modèle ####################################
 model = LogisticRegression(max_iter=1000)
 model.fit(X_train, y_train)
 model.score(X_train, y_train)
+
+# Evaluation sur le test et les poitns à fort leverage
+L = []
+
+for match_id, match_df in df_test.groupby('match_id'):
+    X_match = X_test.loc[match_df.index]
+    probas = model.predict_proba(X_match)
+
+    # Identifier les indices de "leverage" (indices locaux : 0, 1, 2...)
+    indices_relatifs = selectionner_match_fort_leverage(probas)
+
+    # Conversion en indices globaux de df_test
+    # On utilise .index du groupe pour mapper l'index relatif à l'index réel
+    indices_globaux = match_df.index[indices_relatifs].tolist()
+
+    L.extend(indices_globaux)
+    print(f"Match {match_id} - Indices globaux : {indices_globaux}")
+
 
 probas = model.predict_proba(X_test)
 y_pred_proba = probas[:, 1]
@@ -87,6 +106,25 @@ print(f"Score Train: {model.score(X_train, y_train):.3f}")
 print(f"Score Test: {model.score(X_test, y_test):.3f}")
 print(f"Brier Score Test: {bs:.3f}")
 print(f"Log Loss Test: {ll:.3f}")
+
+
+# leverage
+X_test_leverage = X_test.loc[L]
+y_test_leverage = y_test.loc[L]
+
+# Prédiction des probabilités pour ce sous-ensemble
+probas_leverage = model.predict_proba(X_test_leverage)[:, 1]
+
+# Calcul des scores
+bs_leverage = brier_score_loss(y_test_leverage, probas_leverage)
+ll_leverage = log_loss(y_test_leverage, probas_leverage)
+
+# --- 3. Affichage des résultats ---
+print(f"Résultats High Leverage (n={len(L)})")
+print(f"Brier Score (Leverage): {bs_leverage:.3f}")
+print(f"Log Loss (Leverage): {ll_leverage:.3f}")
+
+
 
 ############################### Affichage de la live win probability ####################################
 
@@ -99,6 +137,7 @@ X_match = X_test.loc[match_indices]
 
 # Prédire les probabilités (colonne 1 = Probabilité que Player 1 gagne)
 probabilities = model.predict_proba(X_match)[:, 1]
+print(probabilities)
 
 # Récupérer les infos pour l'affichage (Score, Joueurs)
 match_info = df_test[df_test['match_id'] == target_match].iloc[0]
@@ -132,17 +171,10 @@ def plot_calibration(y_true, y_probs, model_name):
 
     plt.plot(prob_pred, prob_true, marker='o', linewidth=1, label=model_name)
 
-# --- Dans ton script principal ---
+
 plt.figure(figsize=(8, 8))
-
-# On trace la diagonale de référence
 plt.plot([0, 1], [0, 1], linestyle='--', color='gray', label='Parfaite Calibration')
-
-# On ajoute tes modèles (exemple avec tes résultats XGBoost)
 plot_calibration(y_test, y_pred_proba, "Régression logiqtique baseline (Baseline)")
-
-# Quand tu auras ton RNN, tu n'auras qu'à ajouter cette ligne :
-# plot_calibration(y_test, y_rnn_proba, "Modèle Hybride RNN")
 
 plt.xlabel('Probabilité Prédite')
 plt.ylabel('Fréquence Réelle de Victoire')
@@ -153,7 +185,6 @@ plt.show()
 
 
 def plot_discrimination(y_true, y_probs, model_name):
-    plt.plot([0, 1], [0, 1], "k--", label="Parfaite Calibration", alpha=0.6)
     plt.figure(figsize=(10, 6))
     # Distribution pour les perdants (0)
     sns.kdeplot(y_probs[y_true == 0], label='Réalité : Défaite', shade=True, color='red')
